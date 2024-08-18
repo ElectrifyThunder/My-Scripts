@@ -1,0 +1,210 @@
+local Proximity = game:GetService("ProximityPromptService")
+local rp = game:GetService("ReplicatedStorage")
+local storage = game:GetService("ServerStorage")
+local Players = game:GetService("Players")
+
+local ServerTools = storage.Tools
+
+local remotes = rp.Remotes
+local locker = remotes.Locker
+
+local ProximityPress = remotes.ProximityPress
+
+local PlayerConstants = require(rp.PlayerConstants)
+local BlasterConstrants = require(rp.Blaster.Constants)
+
+local Main = PlayerConstants
+local UIFolder = rp.UI
+
+local ToolUI = UIFolder.Tool
+
+local Inserted = {}
+
+local ConvertNum = {
+    [1] = "One" ;
+    [2] = "Two";
+    [3] = "Three";
+    [4] = "Four";
+    [5] = "Five";
+    [6] = "Six";
+    [7] = "Seven";
+    [8] = "Eight";
+    [9] = "Nine";
+    [10] = "Ten";
+
+    ["Zero"] = 0,
+    ["One"] = 1,
+    ["Two"] = 2,
+    ["Three"] = 3,
+    ["Four"] = 4,
+    ["Five"] = 5,
+    ["Six"] = 6,
+    ["Seven"] = 7,
+    ["Eight"] = 8,
+    ["Nine"] = 9,
+}
+
+function cloneLockerGui(FindTool:Tool,LockerGui:Frame)
+	local UI = ToolUI:Clone()
+	UI.Name = FindTool.Name
+	UI.TextLabel.Text = FindTool.Name
+	UI.Submit.Image = FindTool.TextureId
+	UI.Parent = LockerGui
+end
+
+function frameDestroy(gui)
+    for i, v in ipairs(gui:GetChildren()) do
+        if v:IsA("Frame") then
+			v:Destroy()
+		end
+	end
+end
+
+function createNewUI(Frame,Folder)
+	for i, v in ipairs(Folder:GetChildren()) do
+		local UI = ToolUI:Clone()
+		UI.Name = v.Name
+        UI.TextLabel.Text = v.Name
+        
+        if v then
+            if v:IsA("ObjectValue") then
+                UI.Submit.Image = v.Value.TextureId
+            else
+                UI.Submit.Image = v.TextureId
+            end
+        end
+        
+		UI.Parent = Frame
+	end
+end
+
+
+function CreateNewLayoutUI(Plr:Player,Tool:Tool,Frame:Frame)
+    local WeaponTemplate = rp.UI.WeaponTemplate:Clone()
+
+    WeaponTemplate.WeaponImage.Image = Tool.TextureId
+    WeaponTemplate.WeaponList.Text = Tool.Name
+    WeaponTemplate.Name = Tool.Name
+    WeaponTemplate.Parent = Frame
+    
+    for i, v in ipairs(Frame:GetChildren()) do
+        if v:IsA("Frame") then
+            i -= 2
+            if i == 0 then
+                i+= 1
+            end
+            
+            local Backpack = Plr.Backpack:FindFirstChild(v.Name)
+            local FindNum = ConvertNum[i]
+            v.LayoutOrder = i
+            v.WeaponList.Text = i
+        end
+    end
+end
+
+locker.OnServerEvent:Connect(function(player: Player,Request,LockerRequest,part:Part) 
+	local Char = player.Character or player.CharacterAdded:Wait()
+	local Humanoid = Char:FindFirstChildOfClass("Humanoid")
+	local LockerGui = player.PlayerGui:WaitForChild("Locker")
+    local InventorySlots = player:GetAttribute("InventorySlots")
+    local MaxSlots = rp.Values.MaxSlots
+
+    local Main = player.PlayerGui:WaitForChild("Main")
+    local EquippedTool = Main:WaitForChild("BackpackFrame"):WaitForChild("Inventory"):WaitForChild("EquippedTools")
+
+	if LockerRequest == "TakeOut" then
+		
+        local AvailTools = ServerTools:FindFirstChild(Request)
+        local FindBackpackTool = player.Backpack:FindFirstChild(Request)
+        
+        if not AvailTools or FindBackpackTool then
+            warn("Tool Is Not In The Game. / Already in backpack.")
+			return
+		end
+		
+        local LockerTools = part:FindFirstChild("LockerTools")
+        
+        local FindOldTool = LockerTools:FindFirstChild(Request)
+        local FindOldUI = EquippedTool:FindFirstChild(Request)
+        
+        local FindTool = LockerTools:FindFirstChild(Request):Clone()
+        
+        if FindOldTool then
+            FindOldTool:Destroy()
+        end
+        
+        if FindOldUI then
+            FindOldUI:Destroy()
+        end
+        
+        CreateNewLayoutUI(player,AvailTools,EquippedTool)
+        
+        cloneLockerGui(FindTool.Value,LockerGui.Backpack)
+        
+        FindTool.Value:Clone().Parent = player.Backpack
+        
+        FindTool:Destroy()
+       
+        player:SetAttribute("InventorySlots",InventorySlots+1)
+	end
+	
+	if LockerRequest == "LockerFill" then
+		
+        local AvailTools = ServerTools:FindFirstChild(Request)
+        
+		if not AvailTools then
+			return
+		end
+		
+		local LockerTools = part:FindFirstChild("LockerTools")
+		
+		local FindTool = player.Backpack:FindFirstChild(Request)
+		
+		local ObjectValue = Instance.new("ObjectValue",LockerTools)
+		ObjectValue.Value = AvailTools
+        ObjectValue.Name = FindTool.Name
+        
+		cloneLockerGui(FindTool,LockerGui.Frame)
+		
+		local Findtoolinback = player.Backpack:FindFirstChild(Request)
+		
+        if Findtoolinback then
+			Findtoolinback:Destroy()
+		end
+
+        player:SetAttribute("InventorySlots",InventorySlots-1)
+	end
+	
+end)
+
+ProximityPress.OnServerEvent:Connect(function(playerWhoTriggered: Player,Pressed:boolean,Part:Part) 
+    local LockerTools = Part:FindFirstChild("LockerTools")
+    
+    if not LockerTools then
+        return
+    end
+
+	local LockerGui = playerWhoTriggered.PlayerGui:WaitForChild("Locker")
+	local guiBack = LockerGui.Backpack
+
+	local backpack = playerWhoTriggered:FindFirstChildOfClass("Backpack")
+	
+	local Character = playerWhoTriggered.Character or playerWhoTriggered.CharacterAdded:Wait()
+	local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+	
+	if Part.Name == "Locker" and Pressed then
+		frameDestroy(LockerGui.Frame)
+		frameDestroy(guiBack)
+		
+		Humanoid:UnequipTools()
+		
+		createNewUI(LockerGui.Frame,LockerTools)
+		createNewUI(guiBack,backpack)
+	end
+	
+	if Part.Name == "Locker" and not Pressed then
+		frameDestroy(LockerGui.Frame)
+		frameDestroy(guiBack)
+	end
+	
+end)
