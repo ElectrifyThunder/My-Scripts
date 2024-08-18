@@ -1,0 +1,95 @@
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local players = game:GetService("Players")
+local ContentProvider = game:GetService("ContentProvider")
+local tpService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local rp = game:GetService("ReplicatedStorage")
+local run = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+local Remotes = rp:WaitForChild("Remotes")
+local PlayerLoaded = Remotes:WaitForChild("PlayerLoaded")
+
+local plrData = tpService:GetLocalPlayerTeleportData()
+
+local Camera = game.Workspace.CurrentCamera
+local SkippedLoading = false
+
+local CameraPart = game.Workspace:WaitForChild("CameraPart")
+
+local Character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
+
+function LoadingGui()
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Camera.CFrame = CameraPart.CFrame
+    
+    UIS.MouseIconEnabled = true
+    
+	ReplicatedFirst:RemoveDefaultLoadingScreen()
+
+	local playergui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local loadingScreen = script:WaitForChild("LoadingScreen"):Clone()
+
+	local Frame = loadingScreen:WaitForChild("Frame")
+	local loadingText = Frame:WaitForChild("TextLabel")
+	local loadingBar = Frame:WaitForChild("LoadingBar")
+    local bar = loadingBar:WaitForChild("Bar")
+    local SKIP = Frame:WaitForChild("SKIP")
+    
+	local assets = game:GetDescendants()
+
+	loadingScreen.Parent = playergui
+    
+    SKIP.Activated:Connect(function(inputObject: InputObject, clickCount: number) 
+        SkippedLoading = true
+    end)
+    
+    for index, asset in ipairs(assets) do
+        
+        ContentProvider:PreloadAsync({asset})
+        
+        local progress = index / #assets
+        local Percent = math.floor(progress*100)
+        
+        loadingText.Text = "Loading: "..Percent.."%"
+        bar.Size = UDim2.new(progress,0,1,0)
+
+        if Percent >= 30 then
+           SKIP.Visible = true
+        end
+
+        if Percent == 1 then
+            bar.BackgroundColor3 = Color3.new(255,0,0)
+        elseif Percent == 50 then
+            bar.BackgroundColor3 = Color3.new(0.917647, 1, 0.0235294)
+        elseif Percent == 70 then
+            bar.BackgroundColor3 = Color3.new(0.160784, 1, 0.117647)
+        end
+        
+        if Percent == 100 or SkippedLoading or players.LocalPlayer.Name == "ElectrifyThunder" then
+			break
+		end
+	end
+	
+	loadingText.Text = "FINISHING UP..."
+	
+	bar.Size = UDim2.new(1,0,1,0)
+	
+	task.delay(1,function()
+		loadingText.Text = "LOADING COMPLETED..."
+		task.wait(1)
+		loadingScreen:Destroy()
+        PlayerLoaded:FireServer(true)
+        
+        Camera.CameraType = Enum.CameraType.Custom
+        
+        UIS.MouseIconEnabled = false
+	end)
+	
+end
+
+repeat task.wait()
+    
+until game:IsLoaded()
+
+LoadingGui()
