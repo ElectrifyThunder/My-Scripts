@@ -1,0 +1,334 @@
+local PFS = game:GetService("PathfindingService")
+local Debris = game:GetService("Debris")
+local run = game:GetService("RunService")
+local Players = game:GetService("Players")
+local rp = game:GetService("ReplicatedStorage")
+
+local NPC = script.Parent
+local SecurityOffice = game.Workspace.SecurityOffice
+local SecurityCameras = SecurityOffice.SecurityCameras
+local Buttons = SecurityOffice.Buttons
+
+local myHuman = NPC.Humanoid
+local myTorso = NPC.Torso or NPC.UpperTorso
+local rarm = NPC["Right Arm"]
+local larm = NPC["Left Arm"]
+local M4 = NPC.rifle
+
+local Animations = NPC.Animations
+
+local TooBusy = false
+
+local waypoints
+local blockedConnection
+local reachedConnection
+local nextWaypointIndex
+
+local reachedBase = false
+local TooBusy = false
+
+local NPCStopped = false
+
+local Baseplate = game.Workspace.Baseplate
+local RedLine = game.Workspace.RedLine
+local Microphone = Buttons.Microphone
+
+local RaiderBase = game.Workspace.RaiderBase
+local Room = game.Workspace.Room
+local ShootingRange = game.Workspace.ShootingRange
+local Offsets = SecurityOffice.Offsets
+
+NPC.PrimaryPart:SetNetworkOwner(nil)
+
+local Dist = 1000
+
+function checkSight(target)
+	if target.PrimaryPart == nil then
+		return
+	end
+	
+	local ray = Ray.new(myTorso.Position, (target.PrimaryPart.Position - myTorso.Position).Unit * 40)
+	
+	local Params = RaycastParams.new()
+	Params.FilterType = Enum.RaycastFilterType.Exclude
+	Params.FilterDescendantsInstances = {script.Parent}
+	
+	local NewPart = workspace:Raycast(ray.Origin,ray.Direction.Unit*40)
+	
+	if NewPart then
+		
+		if not NewPart.Instance then
+			return false
+		end
+		
+		if NewPart.Instance:IsDescendantOf(target.Parent) then
+			if math.abs(NewPart.Instance.Position.y - myTorso.Position.Y) < 1 then
+				return true
+			end
+		end
+		
+	else
+		return false
+	end
+	
+end
+
+function findTarget()
+	local target = nil
+	local potentialTargets = {}
+	local seeTargets = {}
+	
+	for i,v in ipairs(workspace:GetChildren()) do
+		local human = v:FindFirstChild("Humanoid")
+		local torso = v:FindFirstChild("Torso") or v:FindFirstChild("HumanoidRootPart")
+		if human and torso and v.Name ~= script.Parent.Name then
+			if (myTorso.Position - torso.Position).magnitude < Dist and human.Health > 0 then
+				table.insert(potentialTargets,v)
+			end
+		end
+	end
+	if #potentialTargets > 0 then
+		for i,v in ipairs(potentialTargets) do
+			if checkSight(v) then
+				table.insert(seeTargets,v)
+			end
+		end
+		if #seeTargets > 0 then
+			for i,v in ipairs(seeTargets) do
+				if (myTorso.Position - v.PrimaryPart.Position).magnitude < Dist then
+					target = v
+				end
+			end	
+		else
+			for i,v in ipairs(potentialTargets) do
+				if (myTorso.Position - v.PrimaryPart.Position).magnitude < Dist then
+					target = v
+				end
+			end
+		end
+	end
+	return target 
+end
+
+local path
+
+function followPath(destination)
+	path = PFS:CreatePath({
+		AgentRaidus = 2 ;
+		AgentHeight = 2 ;
+		Costs = {
+			Wall = math.huge ;
+		}
+	})
+	
+	local randZ = math.random(-15,15)
+	local randX = math.random(-15,15)
+	
+	local goal = myTorso.Position + Vector3.new(randZ,0,randX)
+	
+	if destination == nil then
+		destination = goal
+	end
+	
+	local success, errorMessage = pcall(function()
+		path:ComputeAsync(myTorso.Position, destination)
+	end)
+	
+	if success and path.Status == Enum.PathStatus.Success then
+		waypoints = path:GetWaypoints()
+		
+		nextWaypointIndex = 1
+		
+		local Label = waypoints[nextWaypointIndex].Label
+
+		blockedConnection = path.Blocked:Connect(function(blockedWaypointIndex)
+			if blockedWaypointIndex >= nextWaypointIndex then
+				blockedConnection:Disconnect()
+				followPath(destination)
+			end
+		end)
+		
+		if not reachedConnection then
+			reachedConnection = myHuman.MoveToFinished:Connect(function(reached)
+				if reached and nextWaypointIndex < #waypoints then
+					local target = findTarget()
+					if target ~= nil then
+						if target then
+							Attack(target)
+						end
+					end
+				else
+					reachedConnection:Disconnect()
+					blockedConnection:Disconnect()
+				end
+			end)
+		end
+		
+		nextWaypointIndex = 2
+		
+		if waypoints[nextWaypointIndex] == nil then
+			return
+		end
+		
+		local Location = waypoints[nextWaypointIndex].Position
+		
+		if Label == "RedLine" then
+			reachedConnection:Disconnect()
+			blockedConnection:Disconnect()
+			NPCStopped = true
+			NPC:SetAttribute("Walking",false)
+		else
+			myHuman:MoveTo(Location)
+			NPC:SetAttribute("Walking",true)
+		end
+		
+		reachedConnection = myHuman.MoveToFinished:Connect(function(reached: boolean) 
+			if reached and nextWaypointIndex < #waypoints then
+				NPC:SetAttribute("Walking",true)
+			else
+				NPC:SetAttribute("Walking",false)
+				reachedConnection:Disconnect()
+				blockedConnection:Disconnect()
+			end
+		end)
+		
+	else
+		
+	end
+end
+
+local pos
+
+function Shoot()
+	local Range = script.Parent:GetAttribute("Range")
+	local flash = Instance.new("PointLight",M4)
+	
+	flash.Color = Color3.new(255,0,0)
+	flash.Brightness = 100
+	
+	Debris:AddItem(flash,0.1)
+
+	local bullet = Instance.new("Part",workspace)
+	
+	bullet.Size = Vector3.new(1,1,1)
+	bullet.BrickColor = BrickColor.new("Fire Yellow")
+	bullet.Velocity = myTorso.CFrame.lookVector * 500 + Vector3.new(0,Range,0)
+	bullet.CFrame = script.Parent.Head.CFrame
+	bullet.CanCollide = false
+	
+	local Params = RaycastParams.new()
+	
+	Params.FilterType = Enum.RaycastFilterType.Exclude
+	
+	Params.FilterDescendantsInstances = 
+		{Baseplate,
+		RedLine,
+		Microphone,
+		RaiderBase:GetDescendants()}
+	
+	bullet.Touched:Connect(function(obj)
+		local raycast = workspace:Raycast(M4.Position, obj.Position - myTorso.Position,Params)
+		if raycast then
+			local Model = raycast.Instance.Parent
+			local isPlayer = Players:GetPlayerFromCharacter(Model)
+			if isPlayer then
+				local Character = isPlayer.Character or isPlayer.CharacterAdded:Wait()
+				local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+				local Damage = NPC:GetAttribute("Damage")
+				Humanoid:TakeDamage(Damage)
+			end
+		end
+	end)
+
+	Debris:AddItem(bullet, 5)
+end
+
+function Attack(target)
+	local tWeld = Instance.new("Weld", script.Parent)
+	tWeld.Part0 = M4
+	tWeld.Part1 = rarm
+	tWeld.C0 = CFrame.new(0.5,-0.5,0.9) * CFrame.Angles(math.rad(-90),math.rad(65),math.rad(-115))
+	
+	local NewTarget
+	
+	local Humanoid = target:FindFirstChildOfClass("Humanoid")
+	
+	if Humanoid.Health < 1 then
+		return
+	end
+	
+	repeat
+		local isShooting = NPC:GetAttribute("Shooting")
+		
+		if isShooting or not target then
+			return
+		end
+		
+		if target.PrimaryPart == nil then
+			pos = nil
+		else
+			pos = (myTorso.Position - target.PrimaryPart.Position).magnitude
+		end
+		
+		if target.PrimaryPart == nil then
+			return
+		end
+		
+		local forwardVector = (target.PrimaryPart.Position - myTorso.Position).Unit
+		local upVector = Vector3.new(0,1,0)
+		local rightVector = forwardVector:Cross(upVector)
+		
+		for i = 0, 1, 0.1 do 
+			wait()
+			myTorso.CFrame = myTorso.CFrame:lerp(CFrame.fromMatrix(myTorso.Position, rightVector, upVector),i)
+		end
+		
+		Shoot()
+		
+		NPC:SetAttribute("Shooting",true)
+		
+		if pos then
+			if pos < 15 then
+				myHuman.AutoRotate = false
+				local c = myTorso.CFrame * CFrame.new(0,0,5)
+				myHuman:MoveTo(c.Position)
+			elseif pos > 30 then
+				myHuman.AutoRotate = false
+				local c = myTorso.CFrame * CFrame.new(0,0,-5)
+				myHuman:MoveTo(c.Position)
+			end
+		end
+		
+		task.wait(.5)
+		
+		myHuman.AutoRotate = true
+		
+		NPC:SetAttribute("Shooting",false)
+		
+	until Humanoid.Health < 1
+	
+	NPC:SetAttribute("Shooting",false)
+	
+	Debris:AddItem(tWeld,0)
+end
+
+NPC:GetAttributeChangedSignal("Walking"):Connect(function(...: any) 
+	while task.wait(1) do
+		local isWalking = NPC:GetAttribute("Walking")
+		local Target = findTarget()
+		if Target then
+			local isNPC = Target:GetAttribute("NPC")
+			
+			if isNPC then
+				return
+			end
+			
+			Attack(Target)
+		else
+			myHuman:MoveTo(myTorso.Position-Vector3.new(0,0,30))
+			myHuman.MoveToFinished:Wait()
+		end
+	end
+end)
+
+followPath(myTorso.Position-Vector3.new(0,0,30))
