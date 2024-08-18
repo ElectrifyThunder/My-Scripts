@@ -1,0 +1,156 @@
+local PFS = game:GetService("PathfindingService")
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+local Repl = game:GetService("ReplicatedStorage")
+
+local Remotes = Repl.Remotes
+local EndTalk = Remotes.EndTalk
+
+local npc = script.Parent
+local Proximity = npc:FindFirstChildOfClass("ProximityPrompt")
+local Head = npc:FindFirstChild("Head")
+local Torso = npc:FindFirstChild("Torso") or npc:FindFirstChild("UpperTorso")
+local humanoid = npc:FindFirstChildOfClass("Humanoid")
+
+local StorageValues = ServerStorage.Values
+local ReplValues = Repl.Values
+
+local HighestValueA
+local HighestValueB
+
+local waypoints
+
+local NPCFolder = game.Workspace.NPCs
+
+local Counter = game.Workspace.Counter
+local Microphone = Counter.Microphone
+
+local TargetPos = game.Workspace.GoalPos
+local npcEnd = game.Workspace.NpcEnd
+
+local path
+
+local Moving = false
+local isRage = false
+
+local Cashier = game.Workspace.Cashier
+local npclimit = Repl.Values.npcCountVal
+local clockout = game.Workspace.Clockout
+
+function NPC_Amount()
+    local totalnpcs = Repl.Values.totalnpcs
+    local maxnpcs = Repl.Values.maxnpcs
+
+    if totalnpcs.Value == maxnpcs.Value then
+        return true
+    else
+        return false
+    end
+end
+
+function FollowPath(Pos:Vector3,KillNpc:boolean)
+    
+    local npclimit = Repl.Values.npcCountVal
+    
+    local RandomHigh = math.random(1,5)
+    
+	if RandomHigh == 1 then
+		HighestValueB = 200
+		HighestValueA = 1
+	else
+		HighestValueA = 200
+		HighestValueB = 0
+	end
+	
+	path = PFS:CreatePath({
+		AgentRaidus = 2 ;
+		AgentHeight = 1 ;
+		Costs = {
+			DoorA = HighestValueA ;
+			DoorB = HighestValueB ;
+			Wall = math.huge ;
+		}
+	})
+	
+	local Success, Err = pcall(function(...) 
+		path:ComputeAsync(Torso.Position, Pos)
+	end)
+	
+	if Success and path.Status == Enum.PathStatus.Success then
+        waypoints = path:GetWaypoints()
+        
+        for i, waypoint in pairs(waypoints) do
+            local Label = tostring(waypoint.Label)
+            npc:SetAttribute("Walking",true)
+            
+            humanoid:MoveTo(waypoint.Position)
+            humanoid.MoveToFinished:Wait()
+        end
+        
+        npc:SetAttribute("Arrived",true)
+        npc:SetAttribute("Walking",false)
+        
+        Microphone:SetAttribute("NEXT",true)
+        
+        if not KillNpc then
+            Cashier.Customer.Value = npc
+        else
+            Cashier.Customer.Value = nil
+            npc:Destroy()
+        end
+        
+	else
+		warn(path.Status,Err)
+		task.wait(2)
+		FollowPath(TargetPos.Position,false)
+	end
+end
+
+FollowPath(TargetPos.Position,false)
+
+EndTalk.OnServerEvent:Connect(function(player: Player, Finished:boolean)
+    local DayCompleted = player:GetAttribute("DayCompleted")
+    local DayCount = player:WaitForChild("DayCount")
+    local maxDays = Repl.Values.MaxDays
+    
+    local ReachedLimit = NPC_Amount()
+    
+    print("DONE!")
+    
+    FollowPath(npcEnd.Position,true)
+
+    if Finished and not ReachedLimit then
+        print("cya.")
+        
+        task.wait(1)
+
+        Microphone:SetAttribute("NEXT",false)
+        
+        npclimit.Value = npclimit.Value + 1 
+        
+    else
+        
+        if DayCount.Value == maxDays.Value then
+            warn("HIT MAX DAYS!")
+            
+            clockout.Highlight.FillColor = Color3.new(0,255,0)
+            clockout.Highlight.Enabled = true
+            
+            clockout.ProximityPrompt.Enabled = true
+            
+            player:SetAttribute("ENDSHIFT",true)
+
+        else
+            
+            warn("Reached Limit..!")
+            
+            clockout.Highlight.FillColor = Color3.new(1, 0.5, 0)
+            clockout.Highlight.Enabled = true
+           
+            clockout.ProximityPrompt.Enabled = true
+            
+            player:SetAttribute("DayCompleted",true)
+        end
+        
+    end
+end)
