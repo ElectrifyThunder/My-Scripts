@@ -1,0 +1,63 @@
+local rp = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+
+local Remotes = rp.Remotes
+local PlayerLoaded = Remotes.PlayerLoaded
+
+local Counter = game.Workspace.Counter
+local Microphone = Counter.Microphone
+
+local PlayerConstants = require(rp.PlayerConstants)
+
+local Tools = ServerStorage.Tools
+local LockerRoom = game.Workspace.LockerSection
+
+local npcLimit = rp.Values.npcCountVal
+
+PlayerLoaded.OnServerEvent:Once(function(player: Player, Completed:boolean) 
+    local Main = player.PlayerGui:WaitForChild("Main")
+
+	if Completed then
+		
+		player:SetAttribute(PlayerConstants.PLAYER_LOADED_ATTRIBUTE,true)
+		player:SetAttribute(PlayerConstants.PLAYER_DAYCOMPLETED_ATTRIBUTE,false)
+		player:SetAttribute(PlayerConstants.PLAYER_SPEEDRUN_ATTRIBUTE,false)
+        player:SetAttribute(PlayerConstants.PLAYER_NPC_KILLED,0)
+        
+        player:SetAttribute("Power",110)
+        player:SetAttribute("Shield",110)
+        player:SetAttribute("totalVisitors",0)
+        player:SetAttribute("InventorySlots",0)
+        
+		local Character = player.Character or player.CharacterAdded:Wait()
+        local plrBackpack = player.Backpack
+        
+        local Main = player.PlayerGui:WaitForChild("Main")
+        local Inventory = Main:WaitForChild("BackpackFrame"):WaitForChild("Inventory"):WaitForChild("EquippedTools")
+        
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+		
+		for i, v in ipairs(plrBackpack:GetChildren()) do
+			if v:IsA("Tool") then
+                local FindTool = ServerStorage.Tools[v.Name]
+                if FindTool then
+                    local ListOrder = FindTool:GetAttribute("ListOrder")
+                    local Template = rp.UI.WeaponTemplate:Clone()
+                    Template.LayoutOrder = i
+                    Template.WeaponImage.Image = FindTool.TextureId
+                    Template.Name = v.Name
+                    Template.WeaponList.Text = Template.LayoutOrder
+                    Template.Parent = Inventory
+                    player:SetAttribute("InventorySlots",i)
+                end
+                
+                Humanoid:EquipTool(plrBackpack.Blaster)
+			end
+		end
+		
+        Humanoid.Health = 100
+        npcLimit.Value = 1
+        Humanoid.JumpPower = 0
+	end
+end)
